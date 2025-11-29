@@ -1,119 +1,104 @@
 import streamlit as st
 import pandas as pd
-import io
 import plotly.express as px
+import io
+from datetime import datetime
 
+# ======== UI CONFIG ========
 st.set_page_config(page_title="DSS Iklim Papua Barat", layout="wide")
 
-st.title("🌦️ Decision Support System Iklim - PAPUA BARAT")
-st.markdown("Mendukung literasi iklim dan berpikir komputasi calon guru fisika melalui analisis data cuaca harian.")
+st.markdown("""
+<style>
+    .main-title {
+        font-size: 32px; 
+        font-weight: bold;
+        color: #0066CC;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# ---------------- RULE-BASED FUNCTIONS ----------------
-def prediksi_cuaca(ch, matahari):
-    if ch > 50:
-        return "Hujan Lebat"
-    elif ch > 20:
-        return "Hujan"
-    elif ch > 5:
-        return "Berawan"
-    elif matahari > 5:
-        return "Cerah"
-    else:
-        return "Berawan"
+st.markdown('<p class="main-title">🌦️ DSS Prediksi Iklim - Papua Barat</p>', unsafe_allow_html=True)
+st.write("Aplikasi ini membantu analisis tren iklim berdasarkan data cuaca harian dari Papua Barat.")
 
-def risiko_kekeringan(ch, matahari):
-    if ch < 1 and matahari > 6:
-        return "Risiko Tinggi"
-    elif ch < 5:
-        return "Risiko Sedang"
-    else:
-        return "Risiko Rendah"
-
-def status_angin(angin):
-    if angin > 30:
-        return "Badai"
-    elif angin > 15:
-        return "Kencang"
-    else:
-        return "Normal"
-
-# --------------------------------------------------------
-
-st.sidebar.header("⬆️ Upload Data")
-uploaded_file = st.sidebar.file_uploader("Unggah file Excel (.xlsx)", type=["xlsx"])
+# ======== LOAD DATA ========
+EXCEL_FILE = "PAPUABARAT2.xlsx"
 
 @st.cache_data
-def process_data(file):
-    df = pd.read_excel(file, sheet_name="Data Harian - Table")
-    df["Tanggal"] = pd.to_datetime(df["Tanggal"], format="%d-%m-%Y")
-
-    # Tambahkan kolom baru hasil DSS
-    df["Prediksi Cuaca"] = df.apply(lambda row: prediksi_cuaca(row["curah_hujan"], row["matahari"]), axis=1)
-    df["Risiko Kekeringan"] = df.apply(lambda row: risiko_kekeringan(row["curah_hujan"], row["matahari"]), axis=1)
-    df["Status Angin"] = df["kecepatan_angin"].apply(status_angin)
-
+def load_data():
+    df = pd.read_excel(EXCEL_FILE)
+    df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
     return df
 
-# Jika tidak upload file → pakai default
-data = process_data(uploaded_file) if uploaded_file else process_data("PAPUABARAT2.xlsx")
+try:
+    data = load_data()
+except:
+    st.error("❌ File `PAPUABARAT2.xlsx` tidak ditemukan. Upload atau tambahkan ke project.")
+    st.stop()
 
-# ---------------- SIDE FILTER ----------------
-st.sidebar.header("⚙️ Pengaturan Tampilan")
+# ======== RULE-BASED DSS ========
+def prediksi_cuaca(ch, sun):
+    if ch > 50: return "Hujan Lebat"
+    elif ch > 20: return "Hujan"
+    elif ch > 5: return "Berawan"
+    elif sun > 6: return "Cerah"
+    return "Berawan"
 
-indikator = st.sidebar.selectbox(
-    "🔍 Pilih Analisis yang Ditampilkan",
-    ["Prediksi Cuaca", "Risiko Kekeringan", "Status Angin", "Curah Hujan", "Suhu", "Kecepatan Angin"]
+def risiko_kekeringan(ch, sun):
+    if ch < 1 and sun > 6: return "Tinggi"
+    elif ch < 5: return "Sedang"
+    return "Rendah"
+
+def status_angin(angin):
+    if angin > 30: return "Badai"
+    elif angin > 15: return "Kencang"
+    return "Normal"
+
+data["Prediksi Cuaca"] = data.apply(lambda r: prediksi_cuaca(r["curah_hujan"], r["matahari"]), axis=1)
+data["Risiko Kekeringan"] = data.apply(lambda r: risiko_kekeringan(r["curah_hujan"], r["matahari"]), axis=1)
+data["Status Angin"] = data["kecepatan_angin"].apply(status_angin)
+
+# ======== FILTER TANGGAL ========
+st.sidebar.header("📅 Pilih Tanggal Analisis")
+tanggal = st.sidebar.date_input("Tanggal", value=data["Tanggal"].min())
+
+row = data[data["Tanggal"] == pd.to_datetime(tanggal)]
+
+if row.empty:
+    st.warning("⚠️ Tidak ada data untuk tanggal tersebut.")
+else:
+    info = row.iloc[0]
+
+    st.subheader(f"📊 Kondisi Iklim ({tanggal.strftime('%d %B %Y')})")
+    st.write(f"""
+    - Suhu rata-rata: **{info['Tavg']}°C**
+    - Kelembaban: **{info['kelembaban']}%**
+    - Curah hujan: **{info['curah_hujan']} mm**
+    - Matahari: **{info['matahari']} jam**
+    - Kecepatan angin: **{info['kecepatan_angin']} km/jam**
+    """)
+
+    st.success(f"🌤️ Prediksi Cuaca: **{info['Prediksi Cuaca']}**")
+    st.warning(f"🔥 Risiko Kekeringan: **{info['Risiko Kekeringan']}**")
+    st.info(f"💨 Status Angin: **{info['Status Angin']}**")
+
+# ======== GRAFIK ========
+st.markdown("---")
+st.subheader("📈 Visualisasi Tren Iklim")
+
+pilihan = st.selectbox(
+    "Pilih indikator untuk ditampilkan:",
+    ["curah_hujan", "Tavg", "kelembaban", "matahari", "kecepatan_angin", "Prediksi Cuaca"]
 )
 
-tanggal = st.sidebar.date_input("📅 Pilih Tanggal", value=data["Tanggal"].min(),
-                                min_value=data["Tanggal"].min(), max_value=data["Tanggal"].max())
-
-selected_row = data[data["Tanggal"] == pd.to_datetime(tanggal)]
-
-# ---------------- Hasil Harian ----------------
-if not selected_row.empty:
-    st.subheader(f"📊 Data Iklim - {tanggal.strftime('%d %B %Y')}")
-    info = selected_row.iloc[0]
-
-    st.write(f"- Suhu rata-rata: **{info['Tavg']}°C**")
-    st.write(f"- Kelembaban: **{info['kelembaban']}%**")
-    st.write(f"- Curah hujan: **{info['curah_hujan']} mm**")
-    st.write(f"- Matahari: **{info['matahari']} jam**")
-    st.write(f"- Kecepatan angin: **{info['kecepatan_angin']} km/jam**")
-
-    st.markdown("### 🤖 Hasil Analisis DSS")
-    st.success(f"🌥 Prediksi Cuaca: **{info['Prediksi Cuaca']}**")
-    st.info(f"💧 Risiko Kekeringan: **{info['Risiko Kekeringan']}**")
-    st.warning(f"🌪 Status Angin: **{info['Status Angin']}**")
+if pilihan in ["Prediksi Cuaca"]:
+    fig = px.histogram(data, x="Tanggal", color="Prediksi Cuaca", title="Distribusi Prediksi Cuaca")
 else:
-    st.error("🚫 Tidak ada data untuk tanggal tersebut.")
-
-# ---------------- Grafik ----------------
-st.markdown("---")
-st.subheader("📈 Grafik Tren Data")
-
-if indikator == "Curah Hujan":
-    fig = px.line(data, x="Tanggal", y="curah_hujan", title="Tren Curah Hujan")
-elif indikator == "Suhu":
-    fig = px.line(data, x="Tanggal", y=["Tn", "Tx", "Tavg"], title="Tren Suhu Harian")
-elif indikator == "Kecepatan Angin":
-    fig = px.line(data, x="Tanggal", y="kecepatan_angin", title="Tren Kecepatan Angin")
-else:
-    fig = px.histogram(data, x="Tanggal", color=indikator, title=f"Distribusi {indikator}")
+    fig = px.line(data, x="Tanggal", y=pilihan, title=f"Tren {pilihan.capitalize()} Harian")
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- Data Table + Download ----------------
-with st.expander("📁 Lihat & Unduh Data"):
-    st.dataframe(data)
-
+# ======== EXPORT DATA ========
+with st.expander("⬇️ Unduh Hasil Analisis"):
     buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        data.to_excel(writer, index=False, sheet_name="Hasil DSS")
-
-    st.download_button(
-        label="⬇️ Unduh Hasil Analisis Excel",
-        data=buffer.getvalue(),
-        file_name="DSS_PapuaBarat.xlsx",
-        mime="application/vnd.ms-excel"
-    )
+    data.to_excel(buffer, index=False)
+    st.download_button("Download Excel", buffer.getvalue(), file_name="DSS_Iklim_PapuaBarat.xlsx")
