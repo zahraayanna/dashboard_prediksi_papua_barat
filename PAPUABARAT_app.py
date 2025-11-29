@@ -13,12 +13,16 @@ st.title("📊 Dashboard Prediksi Papua Barat")
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv("prediksi.csv")  # Pastikan nama file benar
-        df.set_index(df.columns[0], inplace=True)  # Set kolom pertama sebagai index (tahun)
+        if "prediksi.xlsx" in os.listdir():
+            df = pd.read_excel("prediksi.xlsx")
+        else:
+            df = pd.read_csv("prediksi.csv")
+        df.set_index(df.columns[0], inplace=True)
         return df
     except Exception as e:
         st.error(f"❌ Gagal memuat data: {e}")
         return None
+
 
 df = load_data()
 
@@ -88,4 +92,5 @@ if df is not None:
 else:
     st.warning("⚠ Data tidak ditemukan. Pastikan file `prediksi.csv` ada di folder project.")
 alue(), file_name="DSS_Iklim_PapuaBarat.xlsx")
+
 
