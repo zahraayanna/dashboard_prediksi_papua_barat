@@ -1,100 +1,183 @@
 import streamlit as st
 import pandas as pd
-import io
+import numpy as np
+import joblib
+import datetime
 import plotly.express as px
 
-st.set_page_config(page_title="DSS Iklim PAPUA BARAT", layout="wide")
+# ============================
+# 1. CONFIGURASI APLIKASI
+# ============================
 
-st.title("🌦️ Decision Support System Iklim - PAPUA BARAT")
-st.markdown("Mendukung literasi iklim dan berpikir komputasi calon guru fisika melalui analisis data cuaca harian.")
+st.set_page_config(
+    page_title="Prediksi Cuaca Papua Barat",
+    layout="wide",
+    page_icon="⛅",
+)
 
-# DSS Functions
-def klasifikasi_cuaca(ch, matahari):
-    if ch > 20:
-        return "Hujan"
-    elif ch > 5:
-        return "Berawan"
-    elif matahari > 4:
-        return "Cerah"
-    else:
-        return "Berawan"
+# Custom CSS untuk tampilan lebih menarik
+st.markdown("""
+<style>
+body {
+    background: linear-gradient(to bottom right, #0f2027, #2c5364);
+}
+.big-title {
+    font-size: 42px;
+    font-weight: bold;
+    color: white;
+    text-align: center;
+    margin-bottom: 5px;
+}
+.sub-text {
+    color: #e6f2ff;
+    text-align: center;
+    font-size: 18px;
+}
+.card {
+    padding: 18px;
+    border-radius: 15px;
+    background: rgba(255,255,255,0.13);
+    color: white;
+    backdrop-filter: blur(5px);
+}
+.metric-value {
+    font-size: 35px;
+    font-weight: bold;
+    color: #00ffcc;
+}
+</style>
+""", unsafe_allow_html=True)
 
-def risiko_kekeringan(ch, matahari):
-    if ch < 1 and matahari > 6:
-        return "Risiko Tinggi"
-    elif ch < 5:
-        return "Risiko Sedang"
-    else:
-        return "Risiko Rendah"
 
-def hujan_ekstrem(ch):
-    return "Ya" if ch > 50 else "Tidak"
+# ============================
+# 2. LOAD MODEL & DATASET
+# ============================
 
-# Upload Data
-st.sidebar.header("⬆️ Upload Data")
-uploaded_file = st.sidebar.file_uploader("Unggah file Excel (.xlsx)", type=["xlsx"])
+MODEL_PATH = "weather_model.pkl"
+DATA_PATH = "papua_barat_weather.csv"   # nama file dataset kamu
 
-@st.cache_data
-def process_data(uploaded_file):
-    df = pd.read_excel(uploaded_file, sheet_name="Data Harian - Table")
-    df["Tanggal"] = pd.to_datetime(df["Tanggal"], format="%d-%m-%Y")
-    df["Prediksi Cuaca"] = df.apply(lambda row: klasifikasi_cuaca(row["curah_hujan"], row["matahari"]), axis=1)
-    df["Risiko Kekeringan"] = df.apply(lambda row: risiko_kekeringan(row["curah_hujan"], row["matahari"]), axis=1)
-    df["Hujan Ekstrem"] = df["curah_hujan"].apply(hujan_ekstrem)
-    return df
+try:
+    model = joblib.load(MODEL_PATH)
+    df = pd.read_csv(DATA_PATH)
+    data_loaded = True
+except:
+    data_loaded = False
+    st.error("❌ Model atau dataset belum ditemukan. Pastikan file *weather_model.pkl* dan dataset tersedia.")
 
-# Default or uploaded data
-if uploaded_file:
-    data = process_data(uploaded_file)
-else:
-    data = process_data("PAPUABARAT2.xlsx")
 
-# Sidebar: Pilih Tanggal
-st.sidebar.header("📅 Filter Tanggal")
-tanggal = st.sidebar.date_input("Pilih Tanggal", value=data["Tanggal"].min(), min_value=data["Tanggal"].min(), max_value=data["Tanggal"].max())
+# ============================
+# 3. HEADER
+# ============================
 
-# Tampilkan Info Harian
-baris = data[data["Tanggal"] == pd.to_datetime(tanggal)]
-if not baris.empty:
-    info = baris.iloc[0]
-    st.subheader(f"📊 Data Iklim - {tanggal.strftime('%d %B %Y')}")
-    st.write(f"- Suhu rata-rata: **{info['Tavg']}°C**")
-    st.write(f"- Kelembaban: **{info['kelembaban']}%**")
-    st.write(f"- Curah hujan: **{info['curah_hujan']} mm**")
-    st.write(f"- Matahari: **{info['matahari']} jam**")
-    st.write(f"- Kecepatan angin: **{info['kecepatan_angin']} km/jam**")
+st.markdown("<p class='big-title'>🌦 Prediksi Cuaca Papua Barat</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-text'>Sistem prediksi berbasis machine learning menggunakan data historis meteorologi Papua Barat</p>", unsafe_allow_html=True)
+
+st.write("")
+
+
+# ============================
+# 4. PILIH WILAYAH
+# ============================
+
+if data_loaded:
+
+    papua_regions = sorted(df["location"].unique())
+
+    selected_region = st.selectbox("📍 Pilih Wilayah:", papua_regions)
+
+    region_data = df[df["location"] == selected_region].tail(100)
+
+
+    # ============================
+    # 5. VISUALISASI DATA SEBELUM PREDIKSI
+    # ============================
+
+    st.subheader("📊 Tren Cuaca Wilayah: " + selected_region)
+
+    colA, colB = st.columns(2)
+
+    # grafik temperatur
+    with colA:
+        fig_temp = px.line(region_data, x="date", y="temperature", title="Tren Suhu (°C)")
+        st.plotly_chart(fig_temp, use_container_width=True)
+
+    # grafik curah hujan
+    with colB:
+        fig_rain = px.bar(region_data, x="date", y="rainfall", title="Curah Hujan (mm)")
+        st.plotly_chart(fig_rain, use_container_width=True)
+
 
     st.markdown("---")
-    st.subheader("🤖 Hasil Analisis Sistem")
-    st.success(f"**Prediksi Cuaca:** {info['Prediksi Cuaca']}")
-    st.info(f"**Risiko Kekeringan:** {info['Risiko Kekeringan']}")
-    st.warning(f"**Hujan Ekstrem:** {info['Hujan Ekstrem']}")
-else:
-    st.error("Data tidak ditemukan untuk tanggal tersebut.")
 
-# Grafik Interaktif
-st.markdown("---")
-st.subheader("📈 Grafik Tren Iklim")
 
-col1, col2 = st.columns(2)
+    # ============================
+    # 6. INPUT PREDIKSI
+    # ============================
 
-with col1:
-    fig_suhu = px.line(data, x="Tanggal", y=["Tn", "Tx", "Tavg"], title="Tren Suhu Harian")
-    st.plotly_chart(fig_suhu, use_container_width=True)
+    st.subheader("🧪 Input Parameter Prediksi")
 
-with col2:
-    fig_hujan = px.line(data, x="Tanggal", y="curah_hujan", title="Tren Curah Hujan Harian")
-    st.plotly_chart(fig_hujan, use_container_width=True)
+    col1, col2, col3 = st.columns(3)
 
-# Tampilkan Data
-with st.expander("📁 Lihat dan Unduh Data Lengkap"):
-    st.dataframe(data)
+    temp = col1.number_input("🌡 Suhu saat ini (°C)", 10, 40, 28)
+    humidity = col2.number_input("💧 Kelembapan (%)", 10, 100, 75)
+    wind = col3.number_input("🌬 Kecepatan Angin (km/h)", 0, 120, 15)
 
-    # Export to Excel
-    st.markdown("⬇️ **Unduh Data Hasil Analisis:**")
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        data.to_excel(writer, sheet_name='Hasil DSS', index=False)
-        writer.close()
+    future_days = st.slider("⏳ Prediksi untuk berapa hari ke depan?", 1, 14, 7)
 
-    st.download_button(label="Unduh Excel", data=buffer.getvalue(), file_name="hasil_dss_iklim.xlsx", mime="application/vnd.ms-excel")
+
+    # ============================
+    # 7. PREDIKSI
+    # ============================
+
+    if st.button("🚀 Prediksi Cuaca"):
+
+        future_dates = [datetime.date.today() + datetime.timedelta(days=i) for i in range(future_days)]
+
+        pred_input = np.array([[temp, humidity, wind] for _ in range(future_days)])
+
+        predictions = model.predict(pred_input)
+
+        result_df = pd.DataFrame({
+            "Tanggal": future_dates,
+            "Prediksi Curah Hujan (mm)": predictions
+        })
+
+        st.success("🎉 Prediksi berhasil!")
+
+        st.dataframe(result_df)
+
+
+        # ============================
+        # 8. HASIL DALAM BENTUK GRAFIK
+        # ============================
+
+        fig_result = px.line(result_df, x="Tanggal", y="Prediksi Curah Hujan (mm)",
+                             markers=True, title="📈 Grafik Prediksi Curah Hujan")
+        st.plotly_chart(fig_result, use_container_width=True)
+
+
+        # ============================
+        # 9. KARTU INFORMASI
+        # ============================
+
+        st.markdown("### 📌 Ringkasan Prediksi")
+        colA, colB, colC = st.columns(3)
+
+        with colA:
+            st.markdown(f"<div class='card'>Rata-rata Curah Hujan:<br><span class='metric-value'>{round(result_df['Prediksi Curah Hujan (mm)'].mean(), 2)} mm</span></div>", unsafe_allow_html=True)
+
+        with colB:
+            st.markdown(f"<div class='card'>Hujan Tertinggi:<br><span class='metric-value'>{round(result_df['Prediksi Curah Hujan (mm)'].max(), 2)} mm</span></div>", unsafe_allow_html=True)
+
+        with colC:
+            st.markdown(f"<div class='card'>Hujan Terendah:<br><span class='metric-value'>{round(result_df['Prediksi Curah Hujan (mm)'].min(), 2)} mm</span></div>", unsafe_allow_html=True)
+
+
+# ============================
+# FOOTER
+# ============================
+
+st.markdown("""
+<hr>
+<p style='text-align:center; color:white;'>🚀 Dibuat untuk Analisis Cuaca Papua Barat — by Zahra</p>
+""", unsafe_allow_html=True)
