@@ -30,7 +30,7 @@ st.write("Sistem ini membantu analisis tren cuaca berdasarkan dataset historis P
 # ------------------- LOAD DATA -------------------
 @st.cache_data
 def load_data():
-    df = pd.read_excel("prediksi.xlsx")  # << FILE WAJIB ADA DI ROOT
+    df = pd.read_excel("PAPUABARAT2.xlsx")  # << FILE WAJIB ADA DI ROOT
     df["Tanggal"] = pd.to_datetime(df["Tanggal"])
     df.set_index("Tanggal", inplace=True)
     return df
@@ -109,3 +109,4 @@ st.download_button(
     file_name="DSS_PapuaBarat.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
