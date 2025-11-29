@@ -1,104 +1,91 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import io
-from datetime import datetime
 
-# ======== UI CONFIG ========
-st.set_page_config(page_title="DSS Iklim Papua Barat", layout="wide")
+# --------------------------
+# APP TITLE
+# --------------------------
+st.title("📊 Dashboard Prediksi Papua Barat")
 
-st.markdown("""
-<style>
-    .main-title {
-        font-size: 32px; 
-        font-weight: bold;
-        color: #0066CC;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<p class="main-title">🌦️ DSS Prediksi Iklim - Papua Barat</p>', unsafe_allow_html=True)
-st.write("Aplikasi ini membantu analisis tren iklim berdasarkan data cuaca harian dari Papua Barat.")
-
-# ======== LOAD DATA ========
-EXCEL_FILE = "PAPUABARAT2.xlsx"
-
+# --------------------------
+# LOAD DATA
+# --------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_excel(EXCEL_FILE)
-    df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce")
-    return df
+    try:
+        df = pd.read_csv("prediksi.csv")  # Pastikan nama file benar
+        df.set_index(df.columns[0], inplace=True)  # Set kolom pertama sebagai index (tahun)
+        return df
+    except Exception as e:
+        st.error(f"❌ Gagal memuat data: {e}")
+        return None
 
-try:
-    data = load_data()
-except:
-    st.error("❌ File `PAPUABARAT2.xlsx` tidak ditemukan. Upload atau tambahkan ke project.")
-    st.stop()
+df = load_data()
 
-# ======== RULE-BASED DSS ========
-def prediksi_cuaca(ch, sun):
-    if ch > 50: return "Hujan Lebat"
-    elif ch > 20: return "Hujan"
-    elif ch > 5: return "Berawan"
-    elif sun > 6: return "Cerah"
-    return "Berawan"
+if df is not None:
+    # --------------------------
+    # SIDEBAR
+    # --------------------------
+    st.sidebar.header("⚙ Pengaturan")
 
-def risiko_kekeringan(ch, sun):
-    if ch < 1 and sun > 6: return "Tinggi"
-    elif ch < 5: return "Sedang"
-    return "Rendah"
+    prediksi_list = df.columns.tolist()
 
-def status_angin(angin):
-    if angin > 30: return "Badai"
-    elif angin > 15: return "Kencang"
-    return "Normal"
+    selected_option = st.sidebar.selectbox(
+        "Pilih Data Prediksi:",
+        options=prediksi_list
+    )
 
-data["Prediksi Cuaca"] = data.apply(lambda r: prediksi_cuaca(r["curah_hujan"], r["matahari"]), axis=1)
-data["Risiko Kekeringan"] = data.apply(lambda r: risiko_kekeringan(r["curah_hujan"], r["matahari"]), axis=1)
-data["Status Angin"] = data["kecepatan_angin"].apply(status_angin)
+    chart_type = st.sidebar.radio(
+        "Pilih Jenis Grafik:",
+        ["Line", "Area", "Bar"]
+    )
 
-# ======== FILTER TANGGAL ========
-st.sidebar.header("📅 Pilih Tanggal Analisis")
-tanggal = st.sidebar.date_input("Tanggal", value=data["Tanggal"].min())
+    # --------------------------
+    # MAIN CONTENT
+    # --------------------------
+    st.subheader(f"📌 Data Prediksi: **{selected_option}**")
 
-row = data[data["Tanggal"] == pd.to_datetime(tanggal)]
+    filtered_df = df[[selected_option]]
 
-if row.empty:
-    st.warning("⚠️ Tidak ada data untuk tanggal tersebut.")
+    st.write(filtered_df)
+
+    # --------------------------
+    # PLOT AREA
+    # --------------------------
+    st.subheader("📈 Visualisasi Grafik")
+
+    if chart_type == "Line":
+        fig = px.line(filtered_df, x=filtered_df.index, y=selected_option, markers=True)
+
+    elif chart_type == "Area":
+        fig = px.area(filtered_df, x=filtered_df.index, y=selected_option)
+
+    else:  # Bar chart
+        fig = px.bar(filtered_df, x=filtered_df.index, y=selected_option)
+
+    fig.update_layout(
+        template="plotly_white",
+        title=f"Grafik Prediksi: {selected_option}",
+        title_font=dict(size=22),
+        xaxis_title="Tahun",
+        yaxis_title="Nilai Prediksi",
+        hovermode="x unified"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # --------------------------
+    # DOWNLOAD DATA
+    # --------------------------
+    csv = filtered_df.to_csv().encode('utf-8')
+    st.download_button(
+        "⬇️ Download data CSV",
+        data=csv,
+        file_name=f"prediksi_{selected_option}.csv",
+        mime="text/csv"
+    )
+
 else:
-    info = row.iloc[0]
+    st.warning("⚠ Data tidak ditemukan. Pastikan file `prediksi.csv` ada di folder project.")
+alue(), file_name="DSS_Iklim_PapuaBarat.xlsx")
 
-    st.subheader(f"📊 Kondisi Iklim ({tanggal.strftime('%d %B %Y')})")
-    st.write(f"""
-    - Suhu rata-rata: **{info['Tavg']}°C**
-    - Kelembaban: **{info['kelembaban']}%**
-    - Curah hujan: **{info['curah_hujan']} mm**
-    - Matahari: **{info['matahari']} jam**
-    - Kecepatan angin: **{info['kecepatan_angin']} km/jam**
-    """)
-
-    st.success(f"🌤️ Prediksi Cuaca: **{info['Prediksi Cuaca']}**")
-    st.warning(f"🔥 Risiko Kekeringan: **{info['Risiko Kekeringan']}**")
-    st.info(f"💨 Status Angin: **{info['Status Angin']}**")
-
-# ======== GRAFIK ========
-st.markdown("---")
-st.subheader("📈 Visualisasi Tren Iklim")
-
-pilihan = st.selectbox(
-    "Pilih indikator untuk ditampilkan:",
-    ["curah_hujan", "Tavg", "kelembaban", "matahari", "kecepatan_angin", "Prediksi Cuaca"]
-)
-
-if pilihan in ["Prediksi Cuaca"]:
-    fig = px.histogram(data, x="Tanggal", color="Prediksi Cuaca", title="Distribusi Prediksi Cuaca")
-else:
-    fig = px.line(data, x="Tanggal", y=pilihan, title=f"Tren {pilihan.capitalize()} Harian")
-
-st.plotly_chart(fig, use_container_width=True)
-
-# ======== EXPORT DATA ========
-with st.expander("⬇️ Unduh Hasil Analisis"):
-    buffer = io.BytesIO()
-    data.to_excel(buffer, index=False)
-    st.download_button("Download Excel", buffer.getvalue(), file_name="DSS_Iklim_PapuaBarat.xlsx")
