@@ -1,117 +1,119 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import pickle
-from sklearn.preprocessing import StandardScaler
-import numpy as np
+import io
+import plotly.express as px
 
-# -----------------------------
-# CONFIGURASI UI
-# -----------------------------
-st.set_page_config(
-    page_title="Prediksi Cuaca Papua Barat",
-    page_icon="🌦",
-    layout="wide"
+st.set_page_config(page_title="DSS Iklim Papua Barat", layout="wide")
+
+st.title("🌦️ Decision Support System Iklim - PAPUA BARAT")
+st.markdown("Mendukung literasi iklim dan berpikir komputasi calon guru fisika melalui analisis data cuaca harian.")
+
+# ---------------- RULE-BASED FUNCTIONS ----------------
+def prediksi_cuaca(ch, matahari):
+    if ch > 50:
+        return "Hujan Lebat"
+    elif ch > 20:
+        return "Hujan"
+    elif ch > 5:
+        return "Berawan"
+    elif matahari > 5:
+        return "Cerah"
+    else:
+        return "Berawan"
+
+def risiko_kekeringan(ch, matahari):
+    if ch < 1 and matahari > 6:
+        return "Risiko Tinggi"
+    elif ch < 5:
+        return "Risiko Sedang"
+    else:
+        return "Risiko Rendah"
+
+def status_angin(angin):
+    if angin > 30:
+        return "Badai"
+    elif angin > 15:
+        return "Kencang"
+    else:
+        return "Normal"
+
+# --------------------------------------------------------
+
+st.sidebar.header("⬆️ Upload Data")
+uploaded_file = st.sidebar.file_uploader("Unggah file Excel (.xlsx)", type=["xlsx"])
+
+@st.cache_data
+def process_data(file):
+    df = pd.read_excel(file, sheet_name="Data Harian - Table")
+    df["Tanggal"] = pd.to_datetime(df["Tanggal"], format="%d-%m-%Y")
+
+    # Tambahkan kolom baru hasil DSS
+    df["Prediksi Cuaca"] = df.apply(lambda row: prediksi_cuaca(row["curah_hujan"], row["matahari"]), axis=1)
+    df["Risiko Kekeringan"] = df.apply(lambda row: risiko_kekeringan(row["curah_hujan"], row["matahari"]), axis=1)
+    df["Status Angin"] = df["kecepatan_angin"].apply(status_angin)
+
+    return df
+
+# Jika tidak upload file → pakai default
+data = process_data(uploaded_file) if uploaded_file else process_data("PAPUABARAT2.xlsx")
+
+# ---------------- SIDE FILTER ----------------
+st.sidebar.header("⚙️ Pengaturan Tampilan")
+
+indikator = st.sidebar.selectbox(
+    "🔍 Pilih Analisis yang Ditampilkan",
+    ["Prediksi Cuaca", "Risiko Kekeringan", "Status Angin", "Curah Hujan", "Suhu", "Kecepatan Angin"]
 )
 
-st.markdown("""
-<style>
-body {
-    background-color: #F5F7FA;
-}
-.big-title {
-    font-size: 36px;
-    font-weight: bold;
-    color: #1F4E79;
-}
-.sub {
-    font-size: 17px;
-    color: #2C3E50;
-}
-.card {
-    background-color: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0px 4px 10px rgba(0,0,0,0.05);
-}
-</style>
-""", unsafe_allow_html=True)
+tanggal = st.sidebar.date_input("📅 Pilih Tanggal", value=data["Tanggal"].min(),
+                                min_value=data["Tanggal"].min(), max_value=data["Tanggal"].max())
 
-st.markdown('<p class="big-title">🌦 Prediksi Cuaca Papua Barat</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub">Dashboard prediksi berbasis data historis dan machine learning.</p>', unsafe_allow_html=True)
-st.write("")
+selected_row = data[data["Tanggal"] == pd.to_datetime(tanggal)]
 
-# -----------------------------
-# LOAD DATASET
-# -----------------------------
-df = pd.read_excel("PAPUABARAT2.xlsx")
+# ---------------- Hasil Harian ----------------
+if not selected_row.empty:
+    st.subheader(f"📊 Data Iklim - {tanggal.strftime('%d %B %Y')}")
+    info = selected_row.iloc[0]
 
-df['Tanggal'] = pd.to_datetime(df['Tanggal'])
+    st.write(f"- Suhu rata-rata: **{info['Tavg']}°C**")
+    st.write(f"- Kelembaban: **{info['kelembaban']}%**")
+    st.write(f"- Curah hujan: **{info['curah_hujan']} mm**")
+    st.write(f"- Matahari: **{info['matahari']} jam**")
+    st.write(f"- Kecepatan angin: **{info['kecepatan_angin']} km/jam**")
 
-# -----------------------------
-# LOAD MODEL
-# -----------------------------
-model = pickle.load(open("model.pkl", "rb"))
-scaler = pickle.load(open("scaler.pkl", "rb"))
+    st.markdown("### 🤖 Hasil Analisis DSS")
+    st.success(f"🌥 Prediksi Cuaca: **{info['Prediksi Cuaca']}**")
+    st.info(f"💧 Risiko Kekeringan: **{info['Risiko Kekeringan']}**")
+    st.warning(f"🌪 Status Angin: **{info['Status Angin']}**")
+else:
+    st.error("🚫 Tidak ada data untuk tanggal tersebut.")
 
-# -----------------------------
-# PILIH VARIABEL
-# -----------------------------
-OPTIONS = {
-    "Suhu Minimum (°C)": "Tn",
-    "Suhu Maksimum (°C)": "Tx",
-    "Suhu Rata-Rata (°C)": "Tavg",
-    "Kelembaban Udara (%)": "kelembaban",
-    "Curah Hujan (mm)": "curah_hujan",
-    "Durasi Penyinaran Matahari (jam)": "matahari",
-    "Kecepatan Angin Maksimum (m/s)": "kecepatan_angin"
-}
+# ---------------- Grafik ----------------
+st.markdown("---")
+st.subheader("📈 Grafik Tren Data")
 
-st.markdown("### 🔍 Pilih Parameter")
-selected = st.selectbox("Parameter cuaca yang ingin ditampilkan:", OPTIONS.keys())
+if indikator == "Curah Hujan":
+    fig = px.line(data, x="Tanggal", y="curah_hujan", title="Tren Curah Hujan")
+elif indikator == "Suhu":
+    fig = px.line(data, x="Tanggal", y=["Tn", "Tx", "Tavg"], title="Tren Suhu Harian")
+elif indikator == "Kecepatan Angin":
+    fig = px.line(data, x="Tanggal", y="kecepatan_angin", title="Tren Kecepatan Angin")
+else:
+    fig = px.histogram(data, x="Tanggal", color=indikator, title=f"Distribusi {indikator}")
 
-selected_column = OPTIONS[selected]
+st.plotly_chart(fig, use_container_width=True)
 
-# -----------------------------
-# PREDIKSI
-# -----------------------------
-last_values = df.iloc[-1, 1:].values.reshape(1, -1)
-scaled_values = scaler.transform(last_values)
+# ---------------- Data Table + Download ----------------
+with st.expander("📁 Lihat & Unduh Data"):
+    st.dataframe(data)
 
-future_prediction = model.predict(scaled_values)[0]
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        data.to_excel(writer, index=False, sheet_name="Hasil DSS")
 
-# -----------------------------
-# PLOT
-# -----------------------------
-st.markdown("### 📈 Perbandingan Data Historis & Prediksi")
-
-fig, ax = plt.subplots(figsize=(12, 5))
-
-ax.plot(df['Tanggal'], df[selected_column], label='Data Historis', linewidth=2)
-ax.scatter(df['Tanggal'].iloc[-1], df[selected_column].iloc[-1], color='blue')
-
-# titik prediksi (sebagai garis titik putus-putus)
-future_date = df['Tanggal'].max() + pd.Timedelta(days=1)
-ax.plot([df['Tanggal'].max(), future_date], 
-        [df[selected_column].iloc[-1], future_prediction[list(OPTIONS.values()).index(selected_column)]],
-        linestyle="--", label="Prediksi", linewidth=2)
-
-ax.set_title(f"Tren {selected}")
-ax.set_xlabel("Tanggal")
-ax.set_ylabel(selected)
-ax.legend()
-
-st.pyplot(fig)
-
-# -----------------------------
-# HASIL PREDIKSI
-# -----------------------------
-st.markdown("### 🔮 Hasil Prediksi Besok")
-st.markdown(f"""
-<div class="card">
-📌 <b>{selected}</b> diperkirakan bernilai 
-<span style="font-size:22px;color:#d35400;font-weight:bold;">
-{round(future_prediction[list(OPTIONS.values()).index(selected_column)], 2)}
-</span>
-</div>
-""", unsafe_allow_html=True)
+    st.download_button(
+        label="⬇️ Unduh Hasil Analisis Excel",
+        data=buffer.getvalue(),
+        file_name="DSS_PapuaBarat.xlsx",
+        mime="application/vnd.ms-excel"
+    )
