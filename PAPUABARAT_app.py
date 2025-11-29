@@ -1,112 +1,118 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
+import os
 
-# ------------------- CONFIG -------------------
-st.set_page_config(
-    page_title="DSS Iklim Papua Barat",
-    layout="wide",
-    page_icon="🌦️"
-)
+# =======================
+# CONFIGURASI APP
+# =======================
+st.set_page_config(page_title="🌦️ Prediksi Iklim Papua Barat", layout="wide")
 
-# ------------------- STYLE -------------------
-st.markdown("""
-<style>
-    .big-title { font-size:32px; font-weight:700; color:#004AAD;}
-    .metric-box {
-        background-color: #E7F0FF;
-        padding: 15px;
-        border-radius: 12px;
-        margin-bottom: 10px;
-        border-left: 6px solid #004AAD;
-    }
-</style>
-""", unsafe_allow_html=True)
+st.title("🌦️ Decision Support System Iklim - Papua Barat")
+st.write("Aplikasi analisis iklim dan prediksi sederhana berbasis tren data historis.")
 
-# ------------------- TITLE -------------------
-st.markdown("<div class='big-title'>🌦️ Decision Support System Iklim Papua Barat</div>", unsafe_allow_html=True)
-st.write("Sistem ini membantu analisis tren cuaca berdasarkan dataset historis Papua Barat.")
+# Debug: tampilkan daftar file agar user tahu apakah file terbaca
+st.sidebar.write("📁 Folder berisi file:")
+st.sidebar.write(os.listdir())
 
-# ------------------- LOAD DATA -------------------
-@st.cache_data
-def load_data():
-    df = pd.read_excel("PAPUABARAT2.xlsx")  # << FILE WAJIB ADA DI ROOT
-    df["Tanggal"] = pd.to_datetime(df["Tanggal"])
-    df.set_index("Tanggal", inplace=True)
-    return df
+DATA_FILE = "PAPUABARAT2.xlsx"
 
+
+# =======================
+# LOAD DATA
+# =======================
 try:
-    data = load_data()
-except:
-    st.error("❌ File `prediksi.xlsx` tidak ditemukan. Pastikan file ada di folder aplikasi.")
-    st.stop()
+    df = pd.read_excel(DATA_FILE, sheet_name="Data Harian - Table")
 
-# ------------------- SIDE FILTER -------------------
-st.sidebar.header("📅 Filter Data")
+    # pastikan tidak ada duplicate column
+    df = df.loc[:, ~df.columns.duplicated()]
 
-date_selected = st.sidebar.date_input(
-    "Pilih Tanggal",
-    min_value=data.index.min(),
-    max_value=data.index.max(),
-    value=data.index.min()
-)
+    # format tanggal
+    df['Tanggal'] = pd.to_datetime(df['Tanggal'], dayfirst=True)
+    df['Tahun'] = df['Tanggal'].dt.year
+    df['Bulan'] = df['Tanggal'].dt.month
 
-parameter = st.sidebar.selectbox(
-    "📊 Pilih Grafik",
-    ["Suhu Harian", "Curah Hujan", "Kelembaban", "Kecepatan Angin", "Penyinaran Matahari"]
-)
+    # variabel yang tersedia
+    possible_vars = ["Tn", "Tx", "Tavg", "kelembaban", "curah_hujan", "matahari", "kecepatan_angin"]
+    available_vars = [v for v in possible_vars if v in df.columns]
 
-# ------------------- DAILY INFORMATION -------------------
-st.subheader(f"📍 Informasi Cuaca: {date_selected.strftime('%d %B %Y')}")
+    label_dict = {
+        "Tn": "Suhu Minimum (°C)",
+        "Tx": "Suhu Maksimum (°C)",
+        "Tavg": "Suhu Rata-rata (°C)",
+        "kelembaban": "Kelembaban Udara (%)",
+        "curah_hujan": "Curah Hujan (mm)",
+        "matahari": "Durasi Penyinaran Matahari (jam)",
+        "kecepatan_angin": "Kecepatan Angin (km/jam)"
+    }
 
-if str(date_selected) in data.index.astype(str):
-    row = data.loc[str(date_selected)].iloc[0] if isinstance(data.loc[str(date_selected)], pd.DataFrame) else data.loc[str(date_selected)]
+    # =======================
+    # AGREGASI BULANAN
+    # =======================
+    agg = {v: 'mean' for v in available_vars}
+    if "curah_hujan" in available_vars:
+        agg["curah_hujan"] = "sum"
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    monthly_df = df.groupby(["Tahun", "Bulan"]).agg(agg).reset_index()
+    monthly_df["Tanggal"] = pd.to_datetime(
+        monthly_df["Tahun"].astype(str) + "-" + monthly_df["Bulan"].astype(str) + "-01"
+    )
 
-    col1.metric("🌡 Suhu Rata-rata", f"{row['Tavg']}°C")
-    col2.metric("💧 Kelembaban", f"{row['kelembaban']}%")
-    col3.metric("☔ Curah Hujan", f"{row['curah_hujan']} mm")
-    col4.metric("🌞 Matahari", f"{row['matahari']} jam")
-    col5.metric("🍃 Kecepatan Angin", f"{row['kecepatan_angin']} km/jam")
+    st.subheader("📊 Data Bulanan Papua Barat")
+    st.dataframe(monthly_df)
 
-else:
-    st.warning("Data untuk tanggal ini tidak tersedia.")
+    # =======================
+    # GRAPH SECTION
+    # =======================
+    st.subheader("📈 Grafik Tren Iklim")
 
-st.markdown("---")
+    selected_var = st.selectbox("Pilih Variabel untuk Ditampilkan", available_vars,
+                                format_func=lambda x: label_dict[x])
 
-# ------------------- GRAPH SECTION -------------------
-st.subheader("📈 Visualisasi Tren Iklim")
+    fig = px.line(
+        monthly_df,
+        x="Tanggal",
+        y=selected_var,
+        title=f"Tren {label_dict[selected_var]}",
+        markers=True
+    )
+    fig.update_layout(height=400)
+    st.plotly_chart(fig, use_container_width=True)
 
-if parameter == "Suhu Harian":
-    fig = px.line(data, y=["Tn", "Tx", "Tavg"], title="Perubahan Suhu Harian")
-elif parameter == "Curah Hujan":
-    fig = px.line(data, y="curah_hujan", title="Curah Hujan Harian (mm)")
-elif parameter == "Kelembaban":
-    fig = px.line(data, y="kelembaban", title="Kelembaban Harian (%)")
-elif parameter == "Kecepatan Angin":
-    fig = px.line(data, y="kecepatan_angin", title="Kecepatan Angin (km/jam)")
-else:
-    fig = px.line(data, y="matahari", title="Durasi Penyinaran Matahari (jam)")
+    # =======================
+    # PREDIKSI SEDERHANA
+    # =======================
+    st.subheader("🔮 Prediksi Tren Sederhana (Moving Average)")
 
-fig.update_traces(line=dict(width=3))
-fig.update_layout(height=450, template="plotly_white")
+    window_size = st.slider("Panjang Periode Moving Average", 2, 12, 6)
 
-st.plotly_chart(fig, use_container_width=True)
+    monthly_df["Prediksi"] = monthly_df[selected_var].rolling(window=window_size).mean()
 
-# ------------------- TABLE -------------------
-with st.expander("📁 Lihat Data Lengkap"):
-    st.dataframe(data)
+    fig2 = px.line(
+        monthly_df,
+        x="Tanggal",
+        y=["Prediksi", selected_var],
+        labels={"value": "Nilai", "variable": "Tipe Data"},
+        title=f"Prediksi Moving Average untuk {label_dict[selected_var]}"
+    )
+    st.plotly_chart(fig2, use_container_width=True)
 
-# ------------------- DOWNLOAD -------------------
-buffer = pd.ExcelWriter("hasil_export.xlsx", engine="xlsxwriter")
-data.to_excel(buffer, sheet_name="Hasil", index=True)
-buffer.save()
+    # =======================
+    # DOWNLOAD
+    # =======================
+    st.subheader("📥 Unduh Hasil Analisis")
 
-st.download_button(
-    label="⬇️ Unduh Data Hasil",
-    data=open("hasil_export.xlsx", "rb"),
-    file_name="DSS_PapuaBarat.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+    export_df = monthly_df[["Tanggal", selected_var, "Prediksi"]]
+    csv_file = export_df.to_csv(index=False).encode("utf-8")
 
+    st.download_button(
+        label="⬇️ Download CSV",
+        data=csv_file,
+        file_name=f"Hasil_Prediksi_{selected_var}.csv",
+        mime="text/csv"
+    )
+
+except Exception as e:
+    st.error(f"❌ File '{DATA_FILE}' tidak ditemukan atau format sheet salah.\n\nError: {e}")
+    st.info("Pastikan file **PAPUABARAT2.xlsx** ada di folder yang sama dengan `app.py`.")
