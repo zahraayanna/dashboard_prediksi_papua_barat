@@ -91,6 +91,7 @@ if df is not None:
 
 else:
     st.warning("⚠ Data tidak ditemukan. Pastikan file `prediksi.csv` ada di folder project.")
-alue(), file_name="DSS_Iklim_PapuaBarat.xlsx")
+value(), file_name="DSS_Iklim_PapuaBarat.xlsx")
+
 
 
